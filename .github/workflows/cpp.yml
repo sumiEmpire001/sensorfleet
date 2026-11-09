@@ -1,0 +1,49 @@
+name: C++ and Arduino/ESP32 build checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  host-cpp:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        env:
+          CXX: ${{ matrix.compiler }}
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+      - run: cmake --build build --parallel
+      - run: ctest --test-dir build --output-on-failure
+  firmware-compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - board: arduino:avr:uno
+            core: arduino:avr
+          - board: esp32:esp32:esp32
+            core: esp32:esp32
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install board core
+        env:
+          BOARD_CORE: ${{ matrix.core }}
+        run: |
+          if [ "$BOARD_CORE" = "esp32:esp32" ]; then
+            arduino-cli core update-index --additional-urls "https://espressif.github.io/arduino-esp32/package_esp32_index.json"
+            arduino-cli core install esp32:esp32 --additional-urls "https://espressif.github.io/arduino-esp32/package_esp32_index.json"
+          else
+            arduino-cli core update-index
+            arduino-cli core install arduino:avr
+          fi
+      - name: Compile sketch
+        env:
+          BOARD_FQBN: ${{ matrix.board }}
+        run: arduino-cli compile --fqbn "$BOARD_FQBN" --libraries ./arduino ./arduino/SensorFleet/examples/IndicatorDemo
